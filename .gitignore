@@ -1,0 +1,6 @@
+backend/.env
+backend/__pycache__/
+backend/**/__pycache__/
+backend/data/news_pipeline.db
+frontend/node_modules/
+frontend/dist/

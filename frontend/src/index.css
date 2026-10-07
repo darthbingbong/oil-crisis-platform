@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Space Grotesk", "Archivo", sans-serif;
+  --font-body: "Archivo", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+
+  /* "Dark-void energy intelligence" token system -- see the design brief.
+     void = canvas, bone = primary text, ash = secondary text.
+     crude (oil) and ion (EV/lithium) never share a color; alarm is
+     reserved solely for conflict/risk indicators. */
+  --color-void: #030303;
+  --color-bone: #f4f1ea;
+  --color-ash: #8a8580;
+  --color-crude: #e8871e;
+  --color-ion: #35e0c9;
+  --color-alarm: #ff3b3b;
+  --color-refinery-teal: #0d3b3d;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-void);
+  color: var(--color-bone);
+  font-family: var(--font-body);
+  font-weight: 300;
+}
+
+/* Thin, near-invisible scrollbars -- the void shouldn't have chrome. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(244, 241, 234, 0.12);
+  border-radius: 3px;
+}
+
+/* Display headline: hierarchy from scale, not weight. */
+.display-heading {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  color: var(--color-bone);
+}
+
+/* Uppercase section label / nav treatment. */
+.section-label {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-ash);
+}
+
+/* Literal data readouts only -- coordinates, live figures, timestamps.
+   The one place "terminal" character survives. */
+.data-readout {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hairline gradient divider, fading to transparent at both ends --
+   replaces bordered card containers everywhere data needs grouping. */
+.hairline {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(244, 241, 234, 0.16) 20%,
+    rgba(244, 241, 234, 0.16) 80%,
+    transparent
+  );
+  border: none;
+}
+
+/* Soft, barely-there elevated surface for floating overlays (e.g. the
+   location-detail view) -- never a flat bordered rectangle. */
+.surface-glow {
+  background: rgba(244, 241, 234, 0.03);
+  border-radius: 22px;
+  box-shadow:
+    inset 0 0 0 1px rgba(244, 241, 234, 0.08),
+    0 0 60px rgba(232, 135, 30, 0.06);
+  backdrop-filter: blur(20px);
+}
+
+/* Visible, on-brand focus ring for keyboard navigation on every
+   interactive element. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-crude);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Accessible slider: visual track stays a thin hairline, interactive hit
+   area is padded to a 44px touch target by the wrapper in Slider.tsx. */
+input[type="range"].terminal-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(244, 241, 234, 0.14);
+  cursor: pointer;
+}
+input[type="range"].terminal-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--color-crude);
+  box-shadow: 0 0 10px rgba(232, 135, 30, 0.7);
+  cursor: pointer;
+  transition: transform 150ms ease-out;
+}
+input[type="range"].terminal-slider::-webkit-slider-thumb:hover,
+input[type="range"].terminal-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+}
+input[type="range"].terminal-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 9999px;
+  background: var(--color-crude);
+  box-shadow: 0 0 10px rgba(232, 135, 30, 0.7);
+  cursor: pointer;
+  transition: transform 150ms ease-out;
+}
+input[type="range"].terminal-slider::-moz-range-thumb:hover,
+input[type="range"].terminal-slider::-moz-range-thumb:active {
+  transform: scale(1.15);
+}
+
+/* Respect prefers-reduced-motion globally. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
