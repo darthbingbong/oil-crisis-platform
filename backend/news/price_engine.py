@@ -24,7 +24,7 @@ crude_price_usd, and a crude event never touches lithium_supply_index.
 import logging
 from datetime import datetime, timezone
 
-from . import db
+from . import db, sse
 from .models import Article, ClassifiedEvent, EventType
 
 logger = logging.getLogger("news_pipeline")
@@ -119,7 +119,7 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
         new_index = max(MIN_LITHIUM_INDEX, min(MAX_LITHIUM_INDEX, new_index))
 
         db.set_price_state(state["crude_price_usd"], state["rolling_baseline_usd"], new_index)
-        db.record_price_event(
+        alert = db.record_price_event(
             article,
             event,
             classifier_used,
@@ -128,6 +128,8 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
             lithium_index_before=index_before,
             lithium_index_after=new_index,
         )
+        new_state = db.get_price_state()
+        sse.broadcast("price_event", {"alert": alert, "price_state": new_state})
         logger.info(
             "[%s] SIMULATED lithium supply index: %.3f -> %.3f (severity=%+.2f conf=%.2f) :: %s",
             classifier_used,
@@ -137,7 +139,7 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
             event.confidence,
             event.summary,
         )
-        return db.get_price_state()
+        return new_state
 
     price_before = state["crude_price_usd"]
     reverted_price = _reverted(price_before, state["rolling_baseline_usd"], hours_elapsed)
@@ -145,7 +147,7 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
     new_price = max(MIN_PRICE_USD, min(MAX_PRICE_USD, new_price))
 
     db.set_price_state(new_price, state["rolling_baseline_usd"], state["lithium_supply_index"])
-    db.record_price_event(
+    alert = db.record_price_event(
         article,
         event,
         classifier_used,
@@ -154,6 +156,8 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
         lithium_index_before=None,
         lithium_index_after=None,
     )
+    new_state = db.get_price_state()
+    sse.broadcast("price_event", {"alert": alert, "price_state": new_state})
 
     pct_change = (new_price - price_before) / price_before * 100
     logger.info(
@@ -168,7 +172,7 @@ def apply_event(article: Article, event: ClassifiedEvent, classifier_used: str) 
         event.affected_entities.chokepoints or "-",
         event.summary,
     )
-    return db.get_price_state()
+    return new_state
 
 
 def apply_reversion_only() -> dict:

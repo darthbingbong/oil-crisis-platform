@@ -93,6 +93,24 @@ body {
   backdrop-filter: blur(20px);
 }
 
+/* Subtle entrance for a newly-arrived live alert feed row -- fires once on
+   mount of each new list item (existing rows don't remount, React keys by
+   alert id), not a repeating/attention-grabbing animation. Covered by the
+   global prefers-reduced-motion rule below (animation-duration -> ~0). */
+@keyframes alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.alert-enter {
+  animation: alert-in 320ms ease-out;
+}
+
 /* Visible, on-brand focus ring for keyboard navigation on every
    interactive element. */
 a:focus-visible,

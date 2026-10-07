@@ -78,3 +78,35 @@ export interface Location {
   narrative: string;
   sourceNote: string;
 }
+
+// News pipeline (backend/news/*) -- mirrors news/db.py's price_state and
+// row_to_alert_dict shapes exactly. ALWAYS a simulation calibrated off
+// classified news, never a live market feed -- see price_engine.py.
+export interface PriceState {
+  id: number;
+  crude_price_usd: number;
+  rolling_baseline_usd: number;
+  lithium_supply_index: number;
+  last_updated_at: string;
+}
+
+export type ClassifierUsed = "rules" | "claude";
+
+export interface AlertEvent {
+  id: number;
+  occurred_at: string;
+  article_title: string;
+  article_url: string;
+  event_type: string;
+  severity: number;
+  confidence: number;
+  classifier_used: ClassifierUsed;
+  price_before: number | null;
+  price_after: number | null;
+  price_pct_change: number | null;
+  lithium_index_before: number | null;
+  lithium_index_after: number | null;
+  chokepoints: string[];
+  countries: string[];
+  summary: string;
+}

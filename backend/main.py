@@ -37,8 +37,9 @@ load_dotenv()  # must run before any module below reads ANTHROPIC_API_KEY / ALPH
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ev_lithium import DEFAULT_GLOBAL_DAILY_CRUDE_PRODUCTION_BBL, supply_shock_to_ev_feasibility
@@ -47,11 +48,12 @@ from routing import load_bypass_routes, recommend_reroute
 
 from news import db as news_db
 from news import price_engine
+from news import sse as news_sse
 from news.classify import classify_article
 from news.fixtures import FIXTURES
 from news.ingestion import url_hash
 from news.models import Article, ClassifiedEvent
-from news.poller import poll_loop
+from news.poller import poll_loop, run_poll_cycle
 from news.relevance import is_relevant
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -444,6 +446,24 @@ def test_inject_news(req: TestInjectRequest):
     )
 
 
+@app.post("/api/v1/news/poll-now")
+async def trigger_poll_now():
+    """
+    DEV-ONLY: runs one real poll cycle (NewsAPI fetch -> relevance filter ->
+    classify -> price engine -> SSE broadcast) on demand, instead of
+    waiting for the background loop's next scheduled tick. Same real
+    pipeline the poller runs automatically -- this just triggers it
+    immediately, for testing/demoing the live push without waiting up to
+    NEWS_POLL_INTERVAL_SECONDS. Not meant to be exposed outside local
+    development (each call still counts against the NewsAPI daily quota).
+    """
+    events = await run_poll_cycle()
+    return {
+        "new_events_classified": len(events),
+        "articles": [a.title for a, _event, _classifier in events],
+    }
+
+
 @app.get("/api/v1/news/recent")
 def get_recent_news_classifications(limit: int = 50):
     """Audit log: every classified article, newest first -- raw article
@@ -465,6 +485,46 @@ def get_news_alerts(limit: int = 50):
     """Live alert feed data: every event that actually moved the
     simulated price or lithium index, newest first."""
     return news_db.recent_price_events(limit=limit)
+
+
+@app.get("/api/v1/news/stream")
+async def news_stream(request: Request):
+    """
+    Server-Sent Events push: one message per price-moving event (news/
+    price_engine.py's apply_event broadcasts via news/sse.py), plus an
+    initial 'snapshot' on every (re)connect so a client that was briefly
+    disconnected resyncs to current state instead of staying stale, and a
+    periodic comment-line heartbeat to keep the connection alive through
+    proxies. No client->server messages needed -- SSE over plain HTTP, no
+    new dependency, works through the existing Vite dev proxy unmodified
+    (unlike a WebSocket, which would need ws:true added there).
+    """
+
+    async def event_generator():
+        queue = news_sse.subscribe()
+        try:
+            snapshot = {
+                "price_state": price_engine.get_state(),
+                "recent_alerts": news_db.recent_price_events(limit=20),
+            }
+            yield f"event: snapshot\ndata: {json.dumps(snapshot, default=str)}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"event: {message['type']}\ndata: {json.dumps(message['data'], default=str)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+        finally:
+            news_sse.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/")

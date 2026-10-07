@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getChokepointRisk } from "../lib/api";
 import { computeChokepointRisk } from "../lib/chokepointRisk";
+import { useAnimatedNumber } from "../lib/useAnimatedNumber";
 import { KNOWN_CHOKEPOINTS, type ChokepointRisk, type RefineryHub } from "../types";
 
 interface Props {
@@ -37,6 +38,8 @@ export default function ChokepointPanel({ selected, onSelect, refineries }: Prop
     };
   }, [selected, refineries]);
 
+  const animatedCapacity = useAnimatedNumber(risk?.capacity_at_risk_bpd ?? 0);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -72,7 +75,7 @@ export default function ChokepointPanel({ selected, onSelect, refineries }: Prop
           <div className="section-label mb-2">Capacity at risk</div>
           <div className="flex items-baseline gap-2 mb-1">
             <span className="data-readout text-4xl" style={{ color: "var(--color-alarm)" }}>
-              {risk.capacity_at_risk_bpd.toLocaleString()}
+              {Math.round(animatedCapacity).toLocaleString()}
             </span>
             <span className="text-sm" style={{ color: "var(--color-ash)" }}>
               bpd

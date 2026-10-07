@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { simulate } from "../lib/api";
 import { localSimulate } from "../lib/localFormula";
+import { useAnimatedNumber } from "../lib/useAnimatedNumber";
 import Slider from "./Slider";
 import type { SimulateRequest, SimulateResponse } from "../types";
 
@@ -33,12 +34,24 @@ function priceColor(pct: number): string {
   return Math.abs(pct) >= 40 ? "var(--color-alarm)" : "var(--color-bone)";
 }
 
-export default function ScenarioPanel() {
+interface Props {
+  /** Bumps whenever the news pipeline moves the lithium_supply_index
+   * (useNewsStream's lastEventId) -- /api/v1/simulate's EV feasibility
+   * numbers depend on that index server-side now (see backend/ev_lithium.py),
+   * so a live news event should refresh this panel's numbers even when no
+   * slider moved. undefined/null is treated as "no news yet, no-op". */
+  newsUpdateSignal?: number | null;
+}
+
+export default function ScenarioPanel({ newsUpdateSignal = null }: Props) {
   const [scenario, setScenario] = useState<SimulateRequest>(DEFAULT_SCENARIO);
   const [result, setResult] = useState<SimulateResponse>(() => localSimulate(DEFAULT_SCENARIO));
   const [status, setStatus] = useState<"loading" | "live" | "offline">("loading");
 
-  // Debounced so dragging a slider doesn't fire a request per pixel of movement.
+  // Debounced so dragging a slider doesn't fire a request per pixel of
+  // movement. Also re-runs (undebounced is fine here, it's not a drag) when
+  // newsUpdateSignal changes, so a live price_event picks up the new
+  // lithium_supply_index without requiring a slider touch.
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
@@ -60,7 +73,12 @@ export default function ScenarioPanel() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [scenario]);
+  }, [scenario, newsUpdateSignal]);
+
+  const animatedPricePct = useAnimatedNumber(result.predicted_price_change_pct);
+  const animatedVehicleYears = useAnimatedNumber(result.ev_feasibility.gasoline_vehicle_years_displaced);
+  const animatedLithiumTonnes = useAnimatedNumber(result.ev_feasibility.lithium_tonnes_required);
+  const animatedLithiumRatio = useAnimatedNumber(result.ev_feasibility.lithium_supply_ratio);
 
   return (
     <div className="flex flex-col gap-8">
@@ -95,8 +113,8 @@ export default function ScenarioPanel() {
           className="data-readout font-medium leading-none"
           style={{ fontSize: "clamp(48px, 6vw, 72px)", color: priceColor(result.predicted_price_change_pct) }}
         >
-          {result.predicted_price_change_pct > 0 ? "+" : ""}
-          {result.predicted_price_change_pct}%
+          {animatedPricePct > 0 ? "+" : ""}
+          {animatedPricePct.toFixed(2)}%
         </div>
         <p className="text-sm font-light leading-relaxed mt-4" style={{ color: "var(--color-ash)" }}>
           {result.explanation}
@@ -110,15 +128,15 @@ export default function ScenarioPanel() {
         <div className="grid grid-cols-2 gap-6 mb-5">
           <StatBlock
             label="Vehicle-years displaced"
-            value={result.ev_feasibility.gasoline_vehicle_years_displaced.toLocaleString()}
+            value={Math.round(animatedVehicleYears).toLocaleString()}
           />
           <StatBlock
             label="Lithium required (t)"
-            value={result.ev_feasibility.lithium_tonnes_required.toLocaleString()}
+            value={Math.round(animatedLithiumTonnes).toLocaleString()}
           />
         </div>
         <div className="section-label mb-2">vs. world annual lithium supply</div>
-        <RatioBar ratio={result.ev_feasibility.lithium_supply_ratio} />
+        <RatioBar ratio={result.ev_feasibility.lithium_supply_ratio} animatedRatio={animatedLithiumRatio} />
         <p className="text-sm font-light leading-relaxed mt-4" style={{ color: "var(--color-ash)" }}>
           {result.ev_feasibility.explanation}
         </p>
@@ -155,8 +173,10 @@ function StatBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RatioBar({ ratio }: { ratio: number }) {
-  const pct = Math.min(ratio, 1) * 100;
+function RatioBar({ ratio, animatedRatio }: { ratio: number; animatedRatio: number }) {
+  // Bar width/number count smoothly via animatedRatio; the alarm/ion color
+  // threshold uses the real final ratio so it doesn't flicker mid-count.
+  const pct = Math.min(animatedRatio, 1) * 100;
   const over = ratio > 1;
   const color = over ? "var(--color-alarm)" : "var(--color-ion)";
   return (
@@ -166,7 +186,7 @@ function RatioBar({ ratio }: { ratio: number }) {
       </div>
       {over && (
         <span className="data-readout absolute right-0 -top-4 text-[11px]" style={{ color }}>
-          {ratio.toFixed(1)}x
+          {animatedRatio.toFixed(1)}x
         </span>
       )}
     </div>

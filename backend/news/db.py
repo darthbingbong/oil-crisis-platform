@@ -217,6 +217,18 @@ def set_price_state(crude_price_usd: float, rolling_baseline_usd: float, lithium
 # historical-chart union (main.py reshapes rows from this into the
 # existing ConflictEvent shape).
 # ---------------------------------------------------------------------------
+def row_to_alert_dict(row: dict) -> dict:
+    """Shared shape for both the GET /api/v1/news/alerts REST response and
+    the SSE broadcast payload -- one wire contract, not two. Parses the
+    JSON-encoded entity lists into real arrays rather than leaving them as
+    strings for the frontend to re-parse."""
+    return {
+        **{k: v for k, v in row.items() if k not in ("chokepoints_json", "countries_json")},
+        "chokepoints": json.loads(row["chokepoints_json"]),
+        "countries": json.loads(row["countries_json"]),
+    }
+
+
 def record_price_event(
     article: Article,
     event: ClassifiedEvent,
@@ -225,13 +237,20 @@ def record_price_event(
     price_after: float | None,
     lithium_index_before: float | None,
     lithium_index_after: float | None,
-) -> None:
+) -> dict:
+    """Returns the newly-recorded row, already shaped via row_to_alert_dict
+    -- callers (price_engine.py) use this to broadcast over SSE without a
+    second round-trip to re-read what was just written."""
     pct_change = None
     if price_before is not None and price_after is not None and price_before != 0:
         pct_change = (price_after - price_before) / price_before * 100
 
+    occurred_at = datetime.now(timezone.utc).isoformat()
+    chokepoints_json = json.dumps(event.affected_entities.chokepoints)
+    countries_json = json.dumps(event.affected_entities.countries)
+
     with _connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO price_events
                 (occurred_at, article_title, article_url, event_type, severity, confidence,
@@ -240,7 +259,7 @@ def record_price_event(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                datetime.now(timezone.utc).isoformat(),
+                occurred_at,
                 article.title,
                 article.url,
                 event.event_type.value,
@@ -252,20 +271,41 @@ def record_price_event(
                 pct_change,
                 lithium_index_before,
                 lithium_index_after,
-                json.dumps(event.affected_entities.chokepoints),
-                json.dumps(event.affected_entities.countries),
+                chokepoints_json,
+                countries_json,
                 event.summary,
             ),
         )
+        new_id = cursor.lastrowid
+
+    return row_to_alert_dict({
+        "id": new_id,
+        "occurred_at": occurred_at,
+        "article_title": article.title,
+        "article_url": article.url,
+        "event_type": event.event_type.value,
+        "severity": event.severity,
+        "confidence": event.confidence,
+        "classifier_used": classifier_used,
+        "price_before": price_before,
+        "price_after": price_after,
+        "price_pct_change": pct_change,
+        "lithium_index_before": lithium_index_before,
+        "lithium_index_after": lithium_index_after,
+        "chokepoints_json": chokepoints_json,
+        "countries_json": countries_json,
+        "summary": event.summary,
+    })
 
 
 def recent_price_events(limit: int = 50) -> list[dict]:
-    """Alert-feed data: newest first."""
+    """Alert-feed data: newest first, same shape as the SSE broadcast
+    payload (both go through row_to_alert_dict)."""
     with _connect() as conn:
         rows = conn.execute(
             "SELECT * FROM price_events ORDER BY occurred_at DESC LIMIT ?", (limit,)
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [row_to_alert_dict(dict(row)) for row in rows]
 
 
 def crude_price_events_for_chart() -> list[dict]:
